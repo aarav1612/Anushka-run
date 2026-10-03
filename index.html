@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anushka Run 🐱</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #101827;
+  color: white;
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.wrap {
+  width: min(100%, 960px);
+  padding: 14px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.stats {
+  display: flex;
+  gap: 8px;
+}
+
+.pill {
+  background: #1d293b;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: bold;
+}
+
+.game {
+  position: relative;
+  background: #8bd5ff;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 13px 20px;
+  background: #7c3aed;
+  color: white;
+  font-weight: bold;
+  font-size: 17px;
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.controls button {
+  width: 90px;
+  background: #1d293b;
+  font-size: 24px;
+}
+
+.help {
+  text-align: center;
+  color: #aeb8c8;
+  font-size: 13px;
+  margin: 9px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <div class="top">
+    <h1>🐱 Anushka Run</h1>
+
+    <div class="stats">
+      <div class="pill">🪙 <span id="coins">0</span></div>
+      <div class="pill">⭐ <span id="score">0</span></div>
+      <div class="pill">❤️ <span id="lives">3</span></div>
+    </div>
+  </div>
+
+  <div class="game">
+
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+    <div class="overlay" id="overlay">
+      <button id="startButton">▶ Start Game</button>
+    </div>
+
+  </div>
+
+  <div class="controls">
+    <button id="leftButton">◀</button>
+    <button id="jumpButton">⬆</button>
+    <button id="rightButton">▶</button>
+  </div>
+
+  <div class="help">
+    Arrow keys / A-D to move · Space / ↑ to jump · Collect coins · Avoid obstacles
+  </div>
+
+</div>
+
+<script>
+(() => {
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const WIDTH = 900;
+const HEIGHT = 500;
+const GROUND = 415;
+
+const coinsText = document.getElementById("coins");
+const scoreText = document.getElementById("score");
+const livesText = document.getElementById("lives");
+
+const overlay = document.getElementById("overlay");
+const startButton = document.getElementById("startButton");
+
+const leftButton = document.getElementById("leftButton");
+const rightButton = document.getElementById("rightButton");
+const jumpButton = document.getElementById("jumpButton");
+
+let gameRunning = false;
+let lastTime = 0;
+
+let score = 0;
+let coins = 0;
+let lives = 3;
+
+let speed = 260;
+let obstacleTimer = 0;
+let coinTimer = 0;
+let invincible = 0;
+
+let obstacles = [];
+let coinObjects = [];
+
+const keys = {
+  left: false,
+  right: false
+};
+
+const player = {
+  x: 130,
+  y: GROUND - 58,
+  width: 50,
+  height: 58,
+  velocityY: 0,
+  onGround: true
+};
+
+
+/* =========================
+   GAME FUNCTIONS
+========================= */
+
+function updateHUD() {
+  coinsText.textContent = coins;
+  scoreText.textContent = Math.floor(score);
+  livesText.textContent = lives;
+}
+
+
+function resetGame() {
+
+  score = 0;
+  coins = 0;
+  lives = 3;
+
+  speed = 260;
+
+  obstacleTimer = 0.5;
+  coinTimer = 0.3;
+
+  invincible = 0;
+
+  obstacles = [];
+  coinObjects = [];
+
+  player.x = 130;
+  player.y = GROUND - player.height;
+  player.velocityY = 0;
+  player.onGround = true;
+
+  startButton.textContent = "▶ Start Game";
+
+  updateHUD();
+}
+
+
+function jump() {
+
+  if (gameRunning && player.onGround) {
+    player.velocityY = -570;
+    player.onGround = false;
+  }
+
+}
+
+
+function collision(a, b) {
+
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+
+}
+
+
+function createObstacle() {
+
+  const height = 35 + Math.random() * 55;
+  const width = 25 + Math.random() * 30;
+
+  obstacles.push({
+    x: WIDTH + 20,
+    y: GROUND - height,
+    width: width,
+    height: height
+  });
+
+}
+
+
+function createCoin() {
+
+  coinObjects.push({
+    x: WIDTH + 15,
+    y: 230 + Math.random() * 140,
+    radius: 11,
+    rotation: 0
+  });
+
+}
+
+
+function playerHurt() {
+
+  if (invincible > 0) {
+    return;
+  }
+
+  lives--;
+
+  invincible = 1.4;
+
+  updateHUD();
+
+  if (lives <= 0) {
+
+    gameRunning = false;
+
+    overlay.style.display = "flex";
+
+    startButton.textContent = "↻ Play Again";
+  }
+
+}
+
+
+/* =========================
+   BACKGROUND
+========================= */
+
+function drawBackground() {
+
+  // Sky
+  ctx.fillStyle = "#8bd5ff";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Clouds
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+
+  for (let i = 0; i < 5; i++) {
+
+    const q = i * 210 - ((score * 0.15) % 210);
+
+    ctx.beginPath();
+
+    ctx.arc(q, 75 + (i % 2) * 35, 25, 0, Math.PI * 2);
+    ctx.arc(q + 30, 70 + (i % 2) * 35, 35, 0, Math.PI * 2);
+    ctx.arc(q + 62, 78 + (i % 2) * 35, 24, 0, Math.PI * 2);
+
+    ctx.fill();
+  }
+
+  // Hills
+  ctx.fillStyle = "#73bd68";
+
+  ctx.beginPath();
+
+  ctx.moveTo(0, 350);
+
+  for (let q = 0; q <= WIDTH; q += 80) {
+    ctx.lineTo(
+      q,
+      315 + Math.sin(q * 0.02) * 25
+    );
+  }
+
+  ctx.lineTo(WIDTH, GROUND);
+  ctx.lineTo(0, GROUND);
+
+  ctx.fill();
+
+  // Ground
+  ctx.fillStyle = "#4c9950";
+  ctx.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
+
+  // Grass
+  ctx.fillStyle = "#367d42";
+
+  for (let q = 0; q < WIDTH; q += 38) {
+    ctx.fillRect(q, GROUND + 14, 22, 5);
+  }
+
+}
+
+
+/* =========================
+   DRAW CAT
+========================= */
+
+function drawCat() {
+
+  ctx.save();
+
+  if (
+    invincible > 0 &&
+    Math.floor(invincible * 10) % 2 === 0
+  ) {
+    ctx.globalAlpha = 0.4;
+  }
+
+  const q = player.x;
+  const r = player.y;
+
+  // Body
+  ctx.fillStyle = "#555";
+  ctx.fillRect(q + 9, r + 25, 34, 29);
+
+  // Head
+  ctx.beginPath();
+
+  ctx.moveTo(q + 8, r + 12);
+  ctx.lineTo(q + 8, r - 3);
+  ctx.lineTo(q + 19, r + 5);
+  ctx.lineTo(q + 31, r + 5);
+  ctx.lineTo(q + 43, r - 3);
+  ctx.lineTo(q + 43, r + 12);
+
+  ctx.quadraticCurveTo(
+    q + 43,
+    r + 29,
+    q + 25,
+    r + 31
+  );
+
+  ctx.quadraticCurveTo(
+    q + 8,
+    r + 29,
+    q + 8,
+    r + 12
+  );
+
+  ctx.fill();
+
+  // Ears
+  ctx.fillStyle = "#f4b183";
+
+  ctx.beginPath();
+
+  ctx.arc(q + 17, r + 13, 3, 0, Math.PI * 2);
+  ctx.arc(q + 35, r + 13, 3, 0, Math.PI * 2);
+
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = "#111";
+
+  ctx.beginPath();
+
+  ctx.arc(q + 18, r + 13, 1.5, 0, Math.PI * 2);
+  ctx.arc(q + 34, r + 13, 1.5, 0, Math.PI * 2);
+
+  ctx.fill();
+
+  // Mouth
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+
+  ctx.arc(q + 26, r + 18, 5, 0.1, 3);
+
+  ctx.stroke();
+
+  // Name tag
+  ctx.fillStyle = "#d9d9d9";
+  ctx.fillRect(q + 5, r + 33, 42, 18);
+
+  ctx.fillStyle = "#111";
+  ctx.font = "bold 10px Arial";
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    "ANUSHKA",
+    q + 26,
+    r + 45
+  );
+
+  // Tail
+  ctx.strokeStyle = "#555";
+  ctx.lineWidth = 7;
+
+  ctx.beginPath();
+
+  ctx.moveTo(q + 41, r + 42);
+
+  ctx.quadraticCurveTo(
+    q + 66,
+    r + 25,
+    q + 52,
+    r + 12
+  );
+
+  ctx.stroke();
+
+  // Feet
+  ctx.fillStyle = "#555";
+
+  ctx.fillRect(q + 12, r + 51, 10, 7);
+  ctx.fillRect(q + 33, r + 51, 10, 7);
+
+  ctx.restore();
+
+}
+
+
+/* =========================
+   DRAW COINS
+========================= */
+
+function drawCoins() {
+
+  coinObjects.forEach(coin => {
+
+    ctx.save();
+
+    ctx.translate(coin.x, coin.y);
+    ctx.rotate(coin.rotation);
+
+    ctx.fillStyle = "#f6c542";
+
+    ctx.beginPath();
+
+    ctx.arc(
+      0,
+      0,
+      coin.radius,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+
+    ctx.fillStyle = "#fff2a0";
+
+    ctx.fillRect(-3, -7, 4, 14);
+
+    ctx.restore();
+
+  });
+
+}
+
+
+/* =========================
+   DRAW OBSTACLES
+========================= */
+
+function drawObstacles() {
+
+  obstacles.forEach(obstacle => {
+
+    ctx.fillStyle = "#d94b4b";
+
+    ctx.fillRect(
+      obstacle.x,
+      obstacle.y,
+      obstacle.width,
+      obstacle.height
+    );
+
+    ctx.fillStyle = "#ff7777";
+
+    ctx.fillRect(
+      obstacle.x + 5,
+      obstacle.y + 5,
+      obstacle.width - 10,
+      6
+    );
+
+    ctx.fillStyle = "#9d3030";
+
+    ctx.fillRect(
+      obstacle.x + 6,
+      obstacle.y + obstacle.height - 8,
+      obstacle.width - 12,
+      5
+    );
+
+  });
+
+}
+
+
+/* =========================
+   DRAW EVERYTHING
+========================= */
+
+function drawGame() {
+
+  drawBackground();
+  drawCoins();
+  drawObstacles();
+  drawCat();
+
+}
+
+
+/* =========================
+   GAME LOOP
+========================= */
+
+function gameLoop(time) {
+
+  if (!gameRunning) {
+
+    drawGame();
+
+    return;
+  }
+
+  const deltaTime = Math.min(
+    (time - lastTime) / 1000,
+    0.035
+  );
+
+  lastTime = time;
+
+  // Score
+  score += deltaTime * 10;
+
+  // Gradually increase speed
+  speed += deltaTime * 2.2;
+
+  // Invincibility timer
+  invincible = Math.max(
+    0,
+    invincible - deltaTime
+  );
+
+
+  // Movement
+  if (keys.left) {
+    player.x -= 260 * deltaTime;
+  }
+
+  if (keys.right) {
+    player.x += 260 * deltaTime;
+  }
+
+  player.x = Math.max(
+    10,
+    Math.min(430, player.x)
+  );
+
+
+  // Gravity
+  player.velocityY += 1500 * deltaTime;
+
+  player.y += player.velocityY * deltaTime;
+
+
+  // Ground collision
+  if (player.y + player.height >= GROUND) {
+
+    player.y = GROUND - player.height;
+
+    player.velocityY = 0;
+
+    player.onGround = true;
+  }
+
+
+  // Spawn timers
+  obstacleTimer -= deltaTime;
+  coinTimer -= deltaTime;
+
+
+  if (obstacleTimer <= 0) {
+
+    obstacleTimer =
+      0.75 + Math.random() * 0.65;
+
+    createObstacle();
+  }
+
+
+  if (coinTimer <= 0) {
+
+    coinTimer =
+      0.55 + Math.random() * 0.7;
+
+    createCoin();
+  }
+
+
+  // Move obstacles
+  obstacles.forEach(obstacle => {
+    obstacle.x -= speed * deltaTime;
+  });
+
+
+  // Move coins
+  coinObjects.forEach(coin => {
+
+    coin.x -= speed * deltaTime;
+
+    coin.rotation += deltaTime * 5;
+
+  });
+
+
+  // Remove old obstacles
+  obstacles = obstacles.filter(
+    obstacle =>
+      obstacle.x + obstacle.width > -20
+  );
+
+
+  // Coin collection
+  coinObjects = coinObjects.filter(coin => {
+
+    const coinBox = {
+      x: coin.x - coin.radius,
+      y: coin.y - coin.radius,
+      width: coin.radius * 2,
+      height: coin.radius * 2
+    };
+
+    if (collision(player, coinBox)) {
+
+      coins++;
+
+      score += 25;
+
+      return false;
+    }
+
+    return coin.x > -30;
+
+  });
+
+
+  // Obstacle collision
+  obstacles.forEach(obstacle => {
+
+    if (collision(player, obstacle)) {
+
+      obstacle.x = -999;
+
+      playerHurt();
+    }
+
+  });
+
+
+  updateHUD();
+
+  drawGame();
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+
+/* =========================
+   START GAME
+========================= */
+
+function startGame() {
+
+  resetGame();
+
+  gameRunning = true;
+
+  overlay.style.display = "none";
+
+  lastTime = performance.now();
+
+  requestAnimationFrame(gameLoop);
+
+}
+
+startButton.addEventListener(
+  "click",
+  startGame
+);
+
+
+/* =========================
+   MOBILE CONTROLS
+========================= */
+
+function holdButton(element, key) {
+
+  element.addEventListener(
+    "pointerdown",
+    event => {
+
+      event.preventDefault();
+
+      keys[key] = true;
+
+    }
+  );
+
+  ["pointerup", "pointercancel", "pointerleave"]
+    .forEach(eventName => {
+
+      element.addEventListener(
+        eventName,
+        () => {
+          keys[key] = false;
+        }
+      );
+
+    });
+
+}
+
+holdButton(leftButton, "left");
+holdButton(rightButton, "right");
+
+
+jumpButton.addEventListener(
+  "pointerdown",
+  event => {
+
+    event.preventDefault();
+
+    jump();
+
+  }
+);
+
+
+/* =========================
+   KEYBOARD CONTROLS
+========================= */
+
+window.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key === "ArrowLeft" ||
+      event.key.toLowerCase() === "a"
+    ) {
+      keys.left = true;
+    }
+
+
+    if (
+      event.key === "ArrowRight" ||
+      event.key.toLowerCase() === "d"
+    ) {
+      keys.right = true;
+    }
+
+
+    if (
+      event.key === "ArrowUp" ||
+      event.code === "Space"
+    ) {
+
+      event.preventDefault();
+
+      jump();
+    }
+
+  }
+);
+
+
+window.addEventListener(
+  "keyup",
+  event => {
+
+    if (
+      event.key === "ArrowLeft" ||
+      event.key.toLowerCase() === "a"
+    ) {
+      keys.left = false;
+    }
+
+
+    if (
+      event.key === "ArrowRight" ||
+      event.key.toLowerCase() === "d"
+    ) {
+      keys.right = false;
+    }
+
+  }
+);
+
+
+/* =========================
+   INITIALIZE
+========================= */
+
+resetGame();
+drawGame();
+
+})();
+</script>
+
+</body>
+  </html>
